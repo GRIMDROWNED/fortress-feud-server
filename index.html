@@ -1,0 +1,377 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>Station Log</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Alegreya+SC:wght@500;700&family=Barlow:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<script src="https://unpkg.com/peerjs@1.5.4/dist/peerjs.min.js"></script>
+<style>
+/* Host device is the hub: stations join with a room code (or the join link) and send entries over PeerJS */
+:root{
+  --bg:#eceef1; --surface:#ffffff; --fg:#1c2230; --muted:#5d6676; --line:#d4d8df;
+  --accent:#9c4a24; --accent-fg:#ffffff; --ok:#2f7a4f; --warn:#a86a00; --bad:#b0322a;
+  --display:"Alegreya SC",Georgia,serif; --body:"Barlow",system-ui,sans-serif; --mono:"IBM Plex Mono",ui-monospace,monospace;
+  color-scheme:light;
+}
+@media (prefers-color-scheme:dark){:root{
+  --bg:#14171d; --surface:#1d2129; --fg:#e7e9ee; --muted:#9aa2b1; --line:#2e3440;
+  --accent:#e08a5a; --accent-fg:#1a1208; --ok:#5fc08a; --warn:#e3a640; --bad:#ef7468; color-scheme:dark}}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--fg);font:16px/1.5 var(--body);padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
+[hidden]{display:none!important}
+.wrap{max-width:760px;margin:0 auto;padding-block:20px 48px;padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px));display:flex;flex-direction:column;gap:20px}
+header{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap}
+h1{font:700 30px/1.1 var(--display);margin:0;letter-spacing:.02em}
+h2{font:700 20px/1.2 var(--display);margin:0}
+button:focus-visible,input:focus-visible,textarea:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.label{font:500 12px var(--body);text-transform:uppercase;letter-spacing:.08em;color:var(--muted)}
+.view{display:flex;flex-direction:column;gap:18px}
+.field{display:flex;flex-direction:column;gap:6px}
+input,textarea{font:inherit;color:var(--fg);background:var(--surface);border:1px solid var(--line);border-radius:6px;padding:10px 12px;width:100%}
+textarea{min-height:70px;resize:vertical}
+.btn{background:var(--accent);color:var(--accent-fg);border:0;border-radius:8px;padding:12px 18px;font:600 16px var(--body);cursor:pointer}
+.btn.ghost{background:var(--surface);color:var(--fg);border:1px solid var(--line)}
+.btn:disabled{opacity:.5;cursor:not-allowed}
+.choices{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.choice{display:flex;flex-direction:column;gap:4px;text-align:left;padding:16px;border:1px solid var(--line);border-radius:10px;background:var(--surface);color:var(--fg);cursor:pointer;font:inherit}
+.choice b{font:700 20px var(--display)}
+.choice span{font-size:14px;color:var(--muted)}
+.pill{display:inline-flex;align-items:center;gap:6px;font:500 13px var(--body);padding:4px 10px;border-radius:999px;border:1px solid var(--line);background:var(--surface)}
+.pill::before{content:"";width:8px;height:8px;border-radius:50%;background:var(--muted)}
+.pill.ok::before{background:var(--ok)} .pill.warn::before{background:var(--warn)} .pill.bad::before{background:var(--bad)}
+.room{display:flex;flex-direction:column;gap:8px;padding:16px;border:1px solid var(--line);border-radius:10px;background:var(--surface)}
+.code{font:500 40px/1 var(--mono);letter-spacing:.18em}
+.link{font:400 13px var(--mono);overflow-wrap:anywhere;color:var(--muted)}
+.row{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+.stations{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:8px}
+.st{text-align:left;border:1px solid var(--line);background:var(--surface);color:var(--fg);border-radius:8px;padding:10px 12px;cursor:pointer;display:flex;flex-direction:column;gap:2px;font:inherit}
+.st b{font:700 17px var(--display)}
+.st span{font-size:13px;color:var(--muted);line-height:1.3}
+.st[aria-pressed="true"]{border-color:var(--accent);box-shadow:inset 0 0 0 1px var(--accent)}
+.rule{font-size:14px;color:var(--muted);border-left:3px solid var(--accent);padding:2px 0 2px 10px;margin:0}
+.teams{display:grid;grid-template-columns:repeat(4,1fr);gap:8px}
+.team{border:1px solid var(--line);background:var(--surface);color:var(--fg);border-radius:8px;padding:12px 4px;font:700 17px var(--display);cursor:pointer}
+.team[aria-pressed="true"]{background:var(--fg);color:var(--bg);border-color:var(--fg)}
+.items{display:flex;flex-direction:column;border:1px solid var(--line);border-radius:8px;background:var(--surface)}
+.item{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:10px 12px}
+.item+.item{border-top:1px solid var(--line)}
+.item .nm{font-weight:600}
+.step{display:flex;align-items:center;gap:6px}
+.step button{width:40px;height:40px;border-radius:8px;border:1px solid var(--line);background:var(--bg);color:var(--fg);font:600 20px var(--body);cursor:pointer}
+.step output{min-width:2.4em;text-align:center;font:500 18px var(--mono);font-variant-numeric:tabular-nums}
+.status{font-size:14px;min-height:1.5em;margin:0}
+.status.ok{color:var(--ok)} .status.err{color:var(--bad)} .status.warn{color:var(--warn)}
+.inv-wrap{overflow-x:auto;border:1px solid var(--line);border-radius:8px;background:var(--surface)}
+table{border-collapse:collapse;width:100%;font-variant-numeric:tabular-nums}
+th,td{padding:8px 10px;text-align:right;border-bottom:1px solid var(--line);white-space:nowrap}
+th{font:500 11px var(--body);text-transform:uppercase;letter-spacing:.06em;color:var(--muted);vertical-align:bottom}
+th:first-child,td:first-child{text-align:left;position:sticky;left:0;background:var(--surface)}
+td:first-child{font-weight:600}
+tr:last-child td{border-bottom:0}
+td.z{color:var(--muted);opacity:.5}
+.chips{display:flex;gap:6px;flex-wrap:wrap}
+.chip{border:1px solid var(--line);background:var(--surface);color:var(--fg);border-radius:999px;padding:5px 11px;font:500 13px var(--body);cursor:pointer;font-variant-numeric:tabular-nums}
+.chip[aria-pressed="true"]{border-color:var(--accent);color:var(--accent)}
+.feed{display:flex;flex-direction:column;border-top:1px solid var(--line)}
+.note{display:grid;grid-template-columns:1fr auto;gap:4px 12px;padding:12px 0;border-bottom:1px solid var(--line)}
+.note .meta{display:flex;gap:8px;align-items:baseline;flex-wrap:wrap;min-width:0}
+.note .who{font-weight:600}
+.note .where{font-size:13px;color:var(--muted)}
+.note .got{grid-column:1/-1;display:flex;gap:6px;flex-wrap:wrap}
+.got span{font:500 13px var(--mono);border:1px solid var(--ok);color:var(--ok);border-radius:4px;padding:1px 7px}
+.got span.neg{border-color:var(--bad);color:var(--bad)}
+.note .text{grid-column:1/-1;font-size:14px;color:var(--muted);white-space:pre-wrap;overflow-wrap:anywhere}
+.note time{font:400 12px var(--mono);color:var(--muted)}
+.del{background:none;border:0;color:var(--muted);font:500 12px var(--body);cursor:pointer;padding:0;text-decoration:underline}
+.reset-btn{border:1px solid var(--bad);color:var(--bad);background:var(--surface);border-radius:8px;padding:8px 14px;font:600 14px var(--body);cursor:pointer}
+.reset-btn[data-c]{background:var(--bad);color:var(--surface)}
+.empty{color:var(--muted);padding:20px 12px;text-align:center;margin:0}
+.small{font-size:14px;color:var(--muted);margin:0}
+@media (max-width:420px){.choices{grid-template-columns:1fr}.code{font-size:32px}}
+@media (prefers-reduced-motion:no-preference){.note.fresh{animation:in .8s ease-out}@keyframes in{from{background:color-mix(in srgb,var(--accent) 18%,transparent)}to{background:transparent}}}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <h1>Station Log</h1>
+    <span class="pill" id="conn" hidden></span>
+  </header>
+
+  <!-- Start -->
+  <section class="view" id="v-start">
+    <p class="small">Pick a role. The host keeps this page open on one device during the game; stations join with the room code.</p>
+    <div class="choices">
+      <button class="choice" id="go-host" type="button"><b>Host</b><span>See every team's resources live</span></button>
+      <button class="choice" id="go-station" type="button"><b>Station</b><span>Log what teams earn at your station</span></button>
+    </div>
+    <div class="field" id="join-box" hidden>
+      <label class="label" for="join-code">Room code from the host</label>
+      <div class="row">
+        <input id="join-code" maxlength="5" autocomplete="off" autocapitalize="characters" style="max-width:180px;font-family:var(--mono);letter-spacing:.15em;text-transform:uppercase" placeholder="ABCDE">
+        <button class="btn" id="join-go" type="button">Join</button>
+      </div>
+    </div>
+  </section>
+
+  <!-- Station -->
+  <section class="view" id="v-station" hidden>
+    <div class="field">
+      <span class="label">Your station</span>
+      <div class="stations" id="stations"></div>
+    </div>
+    <p class="rule" id="rule" hidden></p>
+    <form id="form" hidden>
+      <div class="field">
+        <span class="label">Team</span>
+        <div class="teams" id="teams"></div>
+      </div>
+      <div class="field">
+        <span class="label">What they earned</span>
+        <div class="items" id="items"></div>
+      </div>
+      <div class="field">
+        <label class="label" for="text">Note (optional)</label>
+        <textarea id="text" maxlength="500" placeholder="Anything the host should know"></textarea>
+      </div>
+      <button class="btn" id="send" type="submit" disabled style="align-self:flex-start">Send to host</button>
+      <p class="status" id="status" role="status"></p>
+    </form>
+    <p class="small">Room <b id="st-room"></b> · <button class="del" id="leave" type="button">Leave room</button></p>
+  </section>
+
+  <!-- Host -->
+  <section class="view" id="v-host" hidden>
+    <div class="room">
+      <span class="label">Room code</span>
+      <span class="code" id="h-code"></span>
+      <span class="link" id="h-link"></span>
+      <div class="row">
+        <button class="btn ghost" id="copy" type="button">Copy join link</button>
+        <span class="status" id="copy-status"></span>
+      </div>
+      <p class="small"><span id="h-peers">0 stations connected</span>. Keep this page open; closing it disconnects the stations.</p>
+    </div>
+    <div class="field">
+      <h2>Inventory</h2>
+      <div class="inv-wrap" id="inv"></div>
+    </div>
+    <div class="field">
+      <h2>Log</h2>
+      <div class="chips" id="chips"></div>
+      <div class="feed" id="feed"></div>
+    </div>
+    <div class="row">
+      <button class="reset-btn" id="reset" type="button">Reset game</button>
+      <span class="status" id="reset-status" role="status"></span>
+    </div>
+  </section>
+</div>
+
+<script>
+/* ---------- Connection settings ----------
+   Uses the free PeerJS cloud server, like Drowned Light.
+   For phones on cellular or strict school Wi-Fi, paste the TURN entries from
+   Drowned Light's src/net.js into TURN below (same format as iceServers). */
+const TURN = [];
+const PEER_OPTS = {config:{iceServers:[
+  {urls:"stun:stun.l.google.com:19302"},
+  {urls:"stun:stun.expressturn.com:3478"},
+  ...TURN
+]}};
+const PREFIX = "station-log-";
+
+/* ---------- Game data ---------- */
+const RES={cardboard:"Cardboard",mats:"Mats",shield:"Shield",dball:"Defensive ball",move:"Movement",
+  attack:"Attack ball",combat:"Combat min",steps:"Shooting steps",attackers:"Attackers",defenders:"Defenders"};
+const STATIONS=[
+  {id:"forge",name:"Paper Forge",rule:"Each player grabs one cardboard.",items:{cardboard:1}},
+  {id:"paint",name:"Paint Shop",rule:"Three mats per person.",items:{mats:3}},
+  {id:"armory",name:"Armory",rule:"One shield or defensive ball per person.",items:{shield:0,dball:0}},
+  {id:"gym",name:"Gymnasium",rule:"Activity challenge: 10 pushups (form doesn't matter) earns movement.",items:{move:1}},
+  {id:"camp",name:"Warrior Camp",rule:"One attack or defense ball per person (ping pong or golf).",items:{attack:0,dball:0}},
+  {id:"uni",name:"University",rule:"Correct math answer: +1 min combat. Correct trivia answer: 3 steps closer for shooting.",items:{combat:0,steps:0},stepBy:{steps:3}},
+  {id:"coliseum",name:"Coliseum",rule:"Oreo challenge. Winner gets two attackers and two defenders.",items:{attackers:0,defenders:0},stepBy:{attackers:2,defenders:2}}
+];
+const TEAMS=["Team 1","Team 2","Team 3","Team 4"];
+
+/* ---------- Helpers ---------- */
+const $=id=>document.getElementById(id);
+const el=(t,c,x)=>{const e=document.createElement(t);if(c)e.className=c;if(x!=null)e.textContent=x;return e};
+const stationOf=id=>STATIONS.find(s=>s.id===id);
+const time=t=>t?new Date(t).toLocaleTimeString([], {hour:"numeric",minute:"2-digit"}):"";
+const store={get(k,d){try{const v=localStorage.getItem(k);return v==null?d:JSON.parse(v)}catch(e){return d}},
+  set(k,v){try{localStorage.setItem(k,JSON.stringify(v))}catch(e){}},del(k){try{localStorage.removeItem(k)}catch(e){}}};
+const uid=()=>Date.now().toString(36)+Math.random().toString(36).slice(2,8);
+function newCode(){const a="ABCDEFGHJKMNPQRSTUVWXYZ23456789";let s="";for(let i=0;i<5;i++)s+=a[Math.floor(Math.random()*a.length)];return s}
+function setConn(state,text){const c=$("conn");c.hidden=false;c.className="pill "+state;c.textContent=text}
+function show(v){["v-start","v-station","v-host"].forEach(x=>$(x).hidden=x!==v)}
+
+/* ---------- Start ---------- */
+$("go-host").onclick=()=>{store.set("role","host");startHost()};
+$("go-station").onclick=()=>{$("join-box").hidden=false;$("join-code").focus()};
+$("join-go").onclick=()=>{const c=$("join-code").value.trim().toUpperCase();if(c.length===5){store.set("role","station");store.set("room",c);startStation(c)}};
+$("join-code").addEventListener("keydown",e=>{if(e.key==="Enter")$("join-go").click()});
+
+/* =========================================================
+   HOST
+   ========================================================= */
+let logs=[], filter="all", seen=new Set(), hostPeer=null, conns=new Set();
+function startHost(){
+  show("v-host");
+  let code=store.get("hostRoom",null); if(!code){code=newCode();store.set("hostRoom",code)}
+  logs=store.get("hostLogs",[]); logs.forEach(l=>seen.add(l.id));
+  const link=location.origin+location.pathname+"?room="+code;
+  $("h-code").textContent=code; $("h-link").textContent=link;
+  $("copy").onclick=async()=>{try{await navigator.clipboard.writeText(link);$("copy-status").textContent="Copied."}catch(e){$("copy-status").textContent="Select the link above to copy it."}};
+  renderHost();
+  connectHost(code);
+}
+function connectHost(code){
+  setConn("warn","Opening room…");
+  hostPeer=new Peer(PREFIX+code,PEER_OPTS);
+  hostPeer.on("open",()=>setConn("ok","Room open"));
+  hostPeer.on("connection",conn=>{
+    conn.on("open",()=>{conns.add(conn);updatePeers()});
+    conn.on("data",msg=>{
+      if(!msg||msg.type!=="entry"||!msg.entry)return;
+      const e=msg.entry;
+      if(!logs.some(l=>l.id===e.id)){
+        logs.unshift({id:String(e.id),station:String(e.station),player:String(e.player),items:sanitize(e.items),text:String(e.text||"").slice(0,500),at:Date.now()});
+        store.set("hostLogs",logs); renderHost();
+      }
+      conn.send({type:"ack",id:e.id});
+    });
+    const gone=()=>{conns.delete(conn);updatePeers()};
+    conn.on("close",gone);conn.on("error",gone);
+  });
+  hostPeer.on("disconnected",()=>{setConn("warn","Reconnecting…");setTimeout(()=>{try{hostPeer.reconnect()}catch(e){}},1500)});
+  hostPeer.on("error",err=>{
+    if(err.type==="unavailable-id"){ // previous tab or a refresh still holds the id; retry shortly
+      setConn("warn","Reopening room…");hostPeer.destroy();setTimeout(()=>connectHost(code),4000);
+    }else if(err.type==="network"||err.type==="server-error"||err.type==="socket-error"){
+      setConn("bad","Can't reach the matchmaking server. Retrying…");
+      hostPeer.destroy();setTimeout(()=>connectHost(code),5000);
+    }
+  });
+}
+function sanitize(items){const o={};for(const k in (items||{}))if(RES[k]){const n=Math.round(Number(items[k]));if(n&&isFinite(n))o[k]=n}return o}
+function updatePeers(){const n=conns.size;$("h-peers").textContent=n+(n===1?" station connected":" stations connected")}
+function renderHost(){
+  const tot=new Map(TEAMS.map(t=>[t,{}]));
+  logs.forEach(l=>{if(!tot.has(l.player))tot.set(l.player,{});const p=tot.get(l.player);for(const r in l.items)p[r]=(p[r]||0)+l.items[r]});
+  let cols=Object.keys(RES).filter(r=>[...tot.values()].some(p=>p[r]));if(!cols.length)cols=Object.keys(RES);
+  const t=el("table"),hr=el("tr");hr.append(el("th",null,"Team"));cols.forEach(c=>hr.append(el("th",null,RES[c])));
+  const th=el("thead");th.append(hr);const tb=el("tbody");
+  tot.forEach((p,name)=>{const tr=el("tr");tr.append(el("td",null,name));cols.forEach(c=>{const v=p[c]||0;tr.append(el("td",v?"":"z",String(v)))});tb.append(tr)});
+  t.append(th,tb);$("inv").replaceChildren(t);
+
+  const counts={all:logs.length};logs.forEach(l=>counts[l.station]=(counts[l.station]||0)+1);
+  $("chips").replaceChildren(...[["all","All"],...STATIONS.map(s=>[s.id,s.name])].map(([id,n])=>{
+    const b=el("button","chip",n+" · "+(counts[id]||0));b.type="button";b.setAttribute("aria-pressed",String(filter===id));
+    b.onclick=()=>{filter=id;renderHost()};return b}));
+  const list=logs.filter(l=>filter==="all"||l.station===filter);
+  if(!list.length){$("feed").replaceChildren(el("p","empty",logs.length?"Nothing from this station yet.":"No entries yet. They show up here the moment a station sends one."));return}
+  $("feed").replaceChildren(...list.map(l=>{
+    const row=el("article","note"+(seen.has(l.id)?"":" fresh"));
+    const meta=el("div","meta");meta.append(el("span","who",l.player),el("span","where",(stationOf(l.station)||{}).name||l.station));
+    const right=el("div");right.style.cssText="display:flex;gap:10px;align-items:baseline";right.append(el("time",null,time(l.at)));
+    const d=el("button","del","Remove");d.type="button";
+    d.onclick=()=>{if(!d.dataset.c){d.dataset.c="1";d.textContent="Tap again to remove";return}
+      logs=logs.filter(x=>x.id!==l.id);store.set("hostLogs",logs);renderHost()};
+    right.append(d);row.append(meta,right);
+    const its=Object.entries(l.items);
+    if(its.length){const g=el("div","got");its.forEach(([k,v])=>g.append(el("span",v<0?"neg":"",(v>0?"+":"")+v+" "+RES[k])));row.append(g)}
+    if(l.text)row.append(el("div","text",l.text));
+    return row}));
+  list.forEach(l=>seen.add(l.id));
+}
+$("reset").onclick=()=>{
+  const b=$("reset"),s=$("reset-status");
+  if(!b.dataset.c){b.dataset.c="1";b.textContent="Tap again to erase all entries";s.className="status warn";s.textContent="This sets every team back to zero and can't be undone.";
+    setTimeout(()=>{delete b.dataset.c;b.textContent="Reset game";if(s.className.includes("warn"))s.textContent=""},6000);return}
+  delete b.dataset.c;b.textContent="Reset game";logs=[];store.set("hostLogs",logs);renderHost();
+  s.className="status ok";s.textContent="Reset done. All teams are back to zero.";
+};
+
+/* =========================================================
+   STATION
+   ========================================================= */
+let station=store.get("station",null), team=null, qty={}, stPeer=null, stConn=null, queue=[], room=null, retryT=null;
+if(!stationOf(station))station=null;
+function startStation(code){
+  room=code; show("v-station"); $("st-room").textContent=code;
+  queue=store.get("queue_"+code,[]);
+  renderTeams(); resetQty(); renderStation(); connectStation();
+}
+function connectStation(){
+  clearTimeout(retryT);
+  setConn("warn","Connecting to host…");
+  if(!stPeer||stPeer.destroyed){
+    stPeer=new Peer(PEER_OPTS);
+    stPeer.on("open",dial);
+    stPeer.on("disconnected",()=>{try{stPeer.reconnect()}catch(e){}});
+    stPeer.on("error",err=>{
+      if(err.type==="peer-unavailable"){setConn("bad","Host not found. Check the code and that the host page is open.");retry()}
+      else if(err.type==="network"||err.type==="server-error"||err.type==="socket-error"){setConn("bad","No connection. Retrying…");stPeer.destroy();retry()}
+    });
+  }else if(stPeer.open)dial();
+}
+function dial(){
+  const c=stPeer.connect(PREFIX+room,{reliable:true});
+  stConn=c;
+  c.on("open",()=>{setConn("ok","Connected to host");flush()});
+  c.on("data",msg=>{
+    if(msg&&msg.type==="ack"){queue=queue.filter(q=>q.id!==msg.id);store.set("queue_"+room,queue);
+      if(!queue.length&&$("status").dataset.wait){$("status").className="status ok";$("status").textContent="Sent to host at "+time(Date.now())+".";delete $("status").dataset.wait}}
+  });
+  const lost=()=>{if(stConn===c){stConn=null;setConn("warn","Lost the host. Reconnecting…");retry()}};
+  c.on("close",lost);c.on("error",lost);
+}
+function retry(){clearTimeout(retryT);retryT=setTimeout(connectStation,3000)}
+function flush(){if(stConn&&stConn.open)queue.forEach(q=>stConn.send({type:"entry",entry:q}))}
+setInterval(()=>{if(queue.length)flush()},5000);
+
+function renderTeams(){
+  $("teams").replaceChildren(...TEAMS.map(t=>{const b=el("button","team",t);b.type="button";b.setAttribute("aria-pressed",String(t===team));
+    b.onclick=()=>{team=t;renderTeams();updateSend()};return b}));
+}
+function resetQty(){const s=stationOf(station);qty=s?{...s.items}:{}}
+function renderStation(){
+  $("stations").replaceChildren(...STATIONS.map(s=>{const b=el("button","st");b.type="button";b.setAttribute("aria-pressed",String(s.id===station));
+    b.append(el("b",null,s.name),el("span",null,Object.keys(s.items).map(k=>RES[k]).join(" · ")));
+    b.onclick=()=>{station=s.id;store.set("station",s.id);resetQty();renderStation()};return b}));
+  const s=stationOf(station);$("rule").hidden=!s;$("form").hidden=!s;if(!s)return;
+  $("rule").textContent=s.rule;
+  $("items").replaceChildren(...Object.keys(s.items).map(k=>{
+    const by=(s.stepBy&&s.stepBy[k])||1,row=el("div","item"),out=el("output",null,String(qty[k]));
+    const m=el("button",null,"−"),p=el("button",null,"+");m.type=p.type="button";
+    m.setAttribute("aria-label","Less "+RES[k]);p.setAttribute("aria-label","More "+RES[k]);
+    m.onclick=()=>{qty[k]-=by;out.textContent=qty[k];updateSend()};p.onclick=()=>{qty[k]+=by;out.textContent=qty[k];updateSend()};
+    const st=el("div","step");st.append(m,out,p);row.append(el("span","nm",RES[k]),st);return row}));
+  updateSend();
+}
+function updateSend(){$("send").disabled=!(station&&team&&(Object.values(qty).some(v=>v)||$("text").value.trim()))}
+$("text").addEventListener("input",updateSend);
+$("form").addEventListener("submit",e=>{
+  e.preventDefault();if($("send").disabled)return;
+  const items={};for(const k in qty)if(qty[k])items[k]=qty[k];
+  const entry={id:uid(),station,player:team,items,text:$("text").value.trim()};
+  queue.push(entry);store.set("queue_"+room,queue);
+  const s=$("status");s.dataset.wait="1";
+  if(stConn&&stConn.open){s.className="status";s.textContent="Sending…";flush()}
+  else{s.className="status warn";s.textContent="Saved on this phone. It will send when the host reconnects."}
+  team=null;renderTeams();$("text").value="";resetQty();renderStation();
+});
+$("leave").onclick=()=>{store.del("role");store.del("room");history.replaceState(null,"",location.pathname);location.reload()};
+
+/* ---------- Boot ---------- */
+const urlRoom=(new URLSearchParams(location.search).get("room")||"").toUpperCase();
+if(urlRoom.length===5){store.set("role","station");store.set("room",urlRoom);startStation(urlRoom)}
+else if(store.get("role")==="host")startHost();
+else if(store.get("role")==="station"&&store.get("room"))startStation(store.get("room"));
+else show("v-start");
+</script>
+</body>
