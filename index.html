@@ -51,8 +51,8 @@ textarea{min-height:70px;resize:vertical}
 .st span{font-size:13px;color:var(--muted);line-height:1.3}
 .st[aria-pressed="true"]{border-color:var(--accent);box-shadow:inset 0 0 0 1px var(--accent)}
 .rule{font-size:14px;color:var(--muted);border-left:3px solid var(--accent);padding:2px 0 2px 10px;margin:0}
-.teams{display:grid;grid-template-columns:repeat(4,1fr);gap:8px}
-.team{border:1px solid var(--line);background:var(--surface);color:var(--fg);border-radius:8px;padding:12px 4px;font:700 17px var(--display);cursor:pointer}
+.teams{display:grid;grid-template-columns:repeat(auto-fill,minmax(80px,1fr));gap:8px}
+.team{border:1px solid var(--line);background:var(--surface);color:var(--fg);border-radius:8px;padding:12px 4px;font:700 16px var(--display);cursor:pointer;white-space:nowrap}
 .team[aria-pressed="true"]{background:var(--fg);color:var(--bg);border-color:var(--fg)}
 .items{display:flex;flex-direction:column;border:1px solid var(--line);border-radius:8px;background:var(--surface)}
 .item{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:10px 12px}
@@ -154,6 +154,14 @@ td.z{color:var(--muted);opacity:.5}
       </div>
       <p class="small"><span id="h-peers">0 stations connected</span>. Keep this page open; closing it disconnects the stations.</p>
     </div>
+    <div class="item" style="border:1px solid var(--line);border-radius:8px;background:var(--surface)">
+      <span class="nm">Number of teams</span>
+      <div class="step">
+        <button type="button" id="t-minus" aria-label="Fewer teams">−</button>
+        <output id="t-count">4</output>
+        <button type="button" id="t-plus" aria-label="More teams">+</button>
+      </div>
+    </div>
     <div class="field">
       <h2>Inventory</h2>
       <div class="inv-wrap" id="inv"></div>
@@ -195,7 +203,10 @@ const STATIONS=[
   {id:"uni",name:"University",rule:"Correct math answer: +1 min combat. Correct trivia answer: 3 steps closer for shooting.",items:{combat:0,steps:0},stepBy:{steps:3}},
   {id:"coliseum",name:"Coliseum",rule:"Oreo challenge. Winner gets two attackers and two defenders.",items:{attackers:0,defenders:0},stepBy:{attackers:2,defenders:2}}
 ];
-const TEAMS=["Team 1","Team 2","Team 3","Team 4"];
+const MAX_TEAMS=10;
+let teamCount=4;
+const teamNames=()=>Array.from({length:teamCount},(_,i)=>"Team "+(i+1));
+const clampTeams=n=>Math.min(MAX_TEAMS,Math.max(1,Math.round(Number(n))||4));
 
 /* ---------- Helpers ---------- */
 const $=id=>document.getElementById(id);
@@ -223,6 +234,13 @@ function startHost(){
   show("v-host");
   let code=store.get("hostRoom",null); if(!code){code=newCode();store.set("hostRoom",code)}
   logs=store.get("hostLogs",[]); logs.forEach(l=>seen.add(l.id));
+  teamCount=clampTeams(store.get("hostTeams",4));
+  const setTeams=n=>{teamCount=clampTeams(n);store.set("hostTeams",teamCount);$("t-count").textContent=teamCount;
+    $("t-minus").disabled=teamCount<=1;$("t-plus").disabled=teamCount>=MAX_TEAMS;
+    conns.forEach(c=>{try{c.send({type:"config",teams:teamCount})}catch(e){}});renderHost()};
+  $("t-minus").onclick=()=>setTeams(teamCount-1);
+  $("t-plus").onclick=()=>setTeams(teamCount+1);
+  setTeams(teamCount);
   const link=location.origin+location.pathname+"?room="+code;
   $("h-code").textContent=code; $("h-link").textContent=link;
   $("copy").onclick=async()=>{try{await navigator.clipboard.writeText(link);$("copy-status").textContent="Copied."}catch(e){$("copy-status").textContent="Select the link above to copy it."}};
@@ -234,7 +252,7 @@ function connectHost(code){
   hostPeer=new Peer(PREFIX+code,PEER_OPTS);
   hostPeer.on("open",()=>setConn("ok","Room open"));
   hostPeer.on("connection",conn=>{
-    conn.on("open",()=>{conns.add(conn);updatePeers()});
+    conn.on("open",()=>{conns.add(conn);updatePeers();try{conn.send({type:"config",teams:teamCount})}catch(e){}});
     conn.on("data",msg=>{
       if(!msg||msg.type!=="entry"||!msg.entry)return;
       const e=msg.entry;
@@ -260,7 +278,7 @@ function connectHost(code){
 function sanitize(items){const o={};for(const k in (items||{}))if(RES[k]){const n=Math.round(Number(items[k]));if(n&&isFinite(n))o[k]=n}return o}
 function updatePeers(){const n=conns.size;$("h-peers").textContent=n+(n===1?" station connected":" stations connected")}
 function renderHost(){
-  const tot=new Map(TEAMS.map(t=>[t,{}]));
+  const tot=new Map(teamNames().map(t=>[t,{}]));
   logs.forEach(l=>{if(!tot.has(l.player))tot.set(l.player,{});const p=tot.get(l.player);for(const r in l.items)p[r]=(p[r]||0)+l.items[r]});
   let cols=Object.keys(RES).filter(r=>[...tot.values()].some(p=>p[r]));if(!cols.length)cols=Object.keys(RES);
   const t=el("table"),hr=el("tr");hr.append(el("th",null,"Team"));cols.forEach(c=>hr.append(el("th",null,RES[c])));
@@ -304,6 +322,7 @@ if(!stationOf(station))station=null;
 function startStation(code){
   room=code; show("v-station"); $("st-room").textContent=code;
   queue=store.get("queue_"+code,[]);
+  teamCount=clampTeams(store.get("teams_"+code,4));
   renderTeams(); resetQty(); renderStation(); connectStation();
 }
 function connectStation(){
@@ -324,6 +343,8 @@ function dial(){
   stConn=c;
   c.on("open",()=>{setConn("ok","Connected to host");flush()});
   c.on("data",msg=>{
+    if(msg&&msg.type==="config"){const n=clampTeams(msg.teams);if(n!==teamCount){teamCount=n;store.set("teams_"+room,n);
+      if(team&&!teamNames().includes(team))team=null;renderTeams();updateSend()}return}
     if(msg&&msg.type==="ack"){queue=queue.filter(q=>q.id!==msg.id);store.set("queue_"+room,queue);
       if(!queue.length&&$("status").dataset.wait){$("status").className="status ok";$("status").textContent="Sent to host at "+time(Date.now())+".";delete $("status").dataset.wait}}
   });
@@ -335,7 +356,7 @@ function flush(){if(stConn&&stConn.open)queue.forEach(q=>stConn.send({type:"entr
 setInterval(()=>{if(queue.length)flush()},5000);
 
 function renderTeams(){
-  $("teams").replaceChildren(...TEAMS.map(t=>{const b=el("button","team",t);b.type="button";b.setAttribute("aria-pressed",String(t===team));
+  $("teams").replaceChildren(...teamNames().map(t=>{const b=el("button","team",t);b.type="button";b.setAttribute("aria-pressed",String(t===team));
     b.onclick=()=>{team=t;renderTeams();updateSend()};return b}));
 }
 function resetQty(){const s=stationOf(station);qty=s?{...s.items}:{}}
