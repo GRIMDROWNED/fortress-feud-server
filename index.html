@@ -61,6 +61,9 @@ textarea{min-height:70px;resize:vertical}
 .step{display:flex;align-items:center;gap:6px}
 .step button{width:40px;height:40px;border-radius:8px;border:1px solid var(--line);background:var(--bg);color:var(--fg);font:600 20px var(--body);cursor:pointer}
 .step output{min-width:2.4em;text-align:center;font:500 18px var(--mono);font-variant-numeric:tabular-nums}
+.yn{display:flex;gap:6px}
+.ynb{min-width:64px;height:40px;border-radius:8px;border:1px solid var(--line);background:var(--bg);color:var(--fg);font:600 15px var(--body);cursor:pointer}
+.ynb[aria-pressed="true"]{background:var(--fg);color:var(--bg);border-color:var(--fg)}
 .status{font-size:14px;min-height:1.5em;margin:0}
 .status.ok{color:var(--ok)} .status.err{color:var(--bad)} .status.warn{color:var(--warn)}
 .inv-wrap{overflow-x:auto;border:1px solid var(--line);border-radius:8px;background:var(--surface)}
@@ -198,7 +201,7 @@ const STATIONS=[
   {id:"forge",name:"Paper Forge",rule:"Each player grabs one cardboard.",items:{cardboard:1}},
   {id:"paint",name:"Paint Shop",rule:"Three mats per person.",items:{mats:3}},
   {id:"armory",name:"Armory",rule:"One shield or defensive ball per person.",items:{shield:0,dball:0}},
-  {id:"gym",name:"Gymnasium",rule:"Activity challenge: 10 pushups (form doesn't matter) earns movement.",items:{move:1}},
+  {id:"gym",name:"Gymnasium",rule:"Activity challenge: 10 pushups (form doesn't matter) earns movement.",items:{move:1},toggle:{move:true}},
   {id:"camp",name:"Warrior Camp",rule:"One attack or defense ball per person (ping pong or golf).",items:{attack:0,dball:0}},
   {id:"uni",name:"University",rule:"Correct math answer: +1 min combat. Correct trivia answer: 3 steps closer for shooting.",items:{combat:0,steps:0},stepBy:{steps:3}},
   {id:"coliseum",name:"Coliseum",rule:"Oreo challenge. Winner gets two attackers and two defenders.",items:{attackers:0,defenders:0},stepBy:{attackers:2,defenders:2}}
@@ -275,7 +278,7 @@ function connectHost(code){
     }
   });
 }
-function sanitize(items){const o={};for(const k in (items||{}))if(RES[k]){const n=Math.round(Number(items[k]));if(n&&isFinite(n))o[k]=n}return o}
+function sanitize(items){const o={};for(const k in (items||{}))if(RES[k]){let n=Math.round(Number(items[k]));if(k==="move")n=n>0?1:0;if(n&&isFinite(n))o[k]=n}return o}
 function updatePeers(){const n=conns.size;$("h-peers").textContent=n+(n===1?" station connected":" stations connected")}
 function renderHost(){
   const tot=new Map(teamNames().map(t=>[t,{}]));
@@ -367,6 +370,12 @@ function renderStation(){
   const s=stationOf(station);$("rule").hidden=!s;$("form").hidden=!s;if(!s)return;
   $("rule").textContent=s.rule;
   $("items").replaceChildren(...Object.keys(s.items).map(k=>{
+    if(s.toggle&&s.toggle[k]){
+      const row=el("div","item"),yn=el("div","yn");
+      [["Yes",1],["No",0]].forEach(([l,v])=>{const b=el("button","ynb",l);b.type="button";b.setAttribute("aria-pressed",String(qty[k]===v));
+        b.onclick=()=>{qty[k]=v;yn.querySelectorAll("button").forEach(x=>x.setAttribute("aria-pressed",String(x===b)));updateSend()};yn.append(b)});
+      row.append(el("span","nm",RES[k]+" earned?"),yn);return row;
+    }
     const by=(s.stepBy&&s.stepBy[k])||1,row=el("div","item"),out=el("output",null,String(qty[k]));
     const m=el("button",null,"−"),p=el("button",null,"+");m.type=p.type="button";
     m.setAttribute("aria-label","Less "+RES[k]);p.setAttribute("aria-label","More "+RES[k]);
